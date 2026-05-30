@@ -15,7 +15,7 @@ PREREQUISITES:
 ## Linux and macOS
 Run the following command:
 ```
-curl -fsSL https://raw.githubusercontent.com/brysonak/buf/refs/heads/main/Install/install.sh| sh
+curl -fsSL https://raw.githubusercontent.com/brysonak/buf/refs/heads/main/Install/install.sh | sh
 ```
 **NOTE**: This script will ask for priviledges.
 
