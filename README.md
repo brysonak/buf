@@ -19,7 +19,8 @@ yay -S buf-cli
 ```
 If you prefer to use `paru` instead, run ``paru -S buf-cli``
 
-Run the following command:
+
+**If you're not on Arch**:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/brysonak/buf/refs/heads/main/Install/install.sh | sh
 ```
