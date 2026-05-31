@@ -213,7 +213,7 @@ fn run(cli: Cli) -> Result<()> {
     println!("\n  Writing {} -> {}...\n", source, target);
     info!("Starting write: {} -> {}", source, target);
 
-    libbuf::write(&params, source_size, target_file)?;
+    libbuf::write(&params, source_size, target_file, None)?;
 
     info!("Write completed successfully");
     println!("Write completed successfully.");

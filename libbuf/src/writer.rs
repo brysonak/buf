@@ -14,8 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
+*/
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -28,7 +27,14 @@ use std::time::Instant;
 use crate::list::human_bytes;
 use crate::validate::WriteParams;
 
-pub fn write(params: &WriteParams, source_size: u64, target_file: File) -> Result<()> {
+// on_progress is called after each block with total bytes written so far.
+// The CLI passes None and uses indicatif; the GUI passes Some to drive its own bar
+pub fn write(
+    params: &WriteParams,
+    source_size: u64,
+    target_file: File,
+    mut on_progress: Option<&mut dyn FnMut(u64)>,
+) -> Result<()> {
     info!("Beginning write operation");
     info!("  source     : {}", params.source);
     info!("  target     : {}", params.target);
@@ -62,10 +68,13 @@ pub fn write(params: &WriteParams, source_size: u64, target_file: File) -> Resul
             })?;
     }
 
-    let pb = build_progress_bar(source_size);
+    // Only show the indicatif bar when no external callback is driving progress
+    let pb = if on_progress.is_none() {
+        Some(build_progress_bar(source_size))
+    } else {
+        None
+    };
 
-    // Allocate aligned buffer. The extra sector_size headroom covers padding on the
-    // final block without needing a separate allocation
     let mut buffer = AlignedBuffer::new(aligned_block + sector_size, sector_size);
 
     let mut bytes_written: u64 = 0;
@@ -94,14 +103,23 @@ pub fn write(params: &WriteParams, source_size: u64, target_file: File) -> Resul
         bytes_written += bytes_read as u64;
         blocks_written += 1;
 
-        pb.set_position(bytes_written);
+        if let Some(cb) = on_progress.as_deref_mut() {
+            cb(bytes_written);
+        }
+        if let Some(pb) = &pb {
+            pb.set_position(bytes_written);
+        }
 
         debug!("Block {:>6} | {} bytes | {} total", blocks_written, bytes_read, bytes_written);
     }
 
-    pb.set_message("Syncing...");
+    if let Some(pb) = &pb {
+        pb.set_message("Syncing...");
+    }
     target.sync().context("Sync error, data may not have reached the device")?;
-    pb.finish_with_message("Done");
+    if let Some(pb) = pb {
+        pb.finish_with_message("Done");
+    }
 
     let elapsed = start.elapsed();
     let elapsed_secs = elapsed.as_secs_f64().max(0.001);

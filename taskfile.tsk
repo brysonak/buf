@@ -1,10 +1,9 @@
-build {
+buildall {
     cargo build --release
 }
 
 install {
     @default
-    @deps build
     if $$OS == linux {
         sudo cp target/release/buf /usr/bin
     } else if $$OS == windows {
@@ -14,3 +13,11 @@ install {
     }
 }
 
+
+gui {
+    cargo build --release -p buf-gui
+}
+
+cli {
+    cargo build --release -p buf-cli 
+}

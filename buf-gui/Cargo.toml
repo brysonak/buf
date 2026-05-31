@@ -1,0 +1,17 @@
+[package]
+name = "buf-gui"
+version = "0.1.0"
+edition = "2021"
+description = "GUI frontend for the buf USB flasher"
+
+[[bin]]
+name = "buf-gui"
+path = "src/main.rs"
+
+[dependencies]
+libbuf  = { path = "../libbuf" }
+eframe  = "0.34.2"
+egui    = "0.34.2"
+rfd = { version = "0.17", features = ["gtk3"], default-features = false }
+anyhow  = "1"
+log     = "0.4"
