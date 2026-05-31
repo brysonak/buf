@@ -109,6 +109,20 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    if let Err(e) = run(cli) {
+        error!("{:#}", e);
+        eprintln!("\n  Error: {:#}\n", e);
+        std::process::exit(1);
+    }
+}
+
+fn run(cli: Cli) -> Result<()> {
+    if cli.list {
+        let devices = libbuf::list_drives()?;
+        libbuf::print_device_table(&devices);
+        return Ok(());
+    }
+
     let log_path = libbuf::init_logger(!cli.no_logging, cli.verbose).unwrap_or_else(|e| {
         eprintln!("Warning: could not initialise logger: {}", e);
         None
@@ -120,21 +134,6 @@ fn main() {
 
     info!("buf started");
     debug!("Parsed CLI args: {:?}", cli);
-
-    if let Err(e) = run(cli) {
-        error!("{:#}", e);
-        eprintln!("\n  Error: {:#}\n", e);
-        std::process::exit(1);
-    }
-}
-
-fn run(cli: Cli) -> Result<()> {
-    if cli.list {
-        info!("Running in --list mode");
-        let devices = libbuf::list_drives()?;
-        libbuf::print_device_table(&devices);
-        return Ok(());
-    }
 
     let source = cli
         .source
