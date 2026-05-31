@@ -21,3 +21,21 @@ curl -fsSL https://raw.githubusercontent.com/brysonak/buf/refs/heads/main/Instal
 
 ## Windows
 Run the `buf-setup.exe` installer from the [releases page](https://github.com/brysonak/buf/releases).
+
+
+# Building
+Pre-requisites:
+- [git](https://git-scm.com/install)
+- [Rust](https://rust-lang.org/tools/install/)
+
+Run the following commands:
+```bash
+git clone https://github.com/brysonak/buf.git
+
+cd buf
+
+cargo build --release
+```
+This will produce a binary inside `target/release`.
+
+To use it straight from the CLI, it's recommended that you add it to PATH on windows. If you're on linux, copy the binary into /usr/bin (or /usr/local/bin) then restart any open shell to use it.
