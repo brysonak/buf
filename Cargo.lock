@@ -553,6 +553,7 @@ dependencies = [
  "libbuf",
  "log",
  "rfd",
+ "windows 0.52.0",
 ]
 
 [[package]]
