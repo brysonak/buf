@@ -13,8 +13,14 @@ PREREQUISITES:
 - [Rust](https://rust-lang.org/tools/install/)
 
 ## Linux and macOS
-Run the following command:
+If you're on Arch, or another Arch Linux based distro, you can install off the AUR with [yay](https://github.com/jguer/yay):
+```bash
+yay -S buf-cli
 ```
+If you prefer to use `paru` instead, run ``paru -S buf-cli``
+
+Run the following command:
+```bash
 curl -fsSL https://raw.githubusercontent.com/brysonak/buf/refs/heads/main/Install/install.sh | sh
 ```
 **NOTE**: This script will ask for priviledges.
