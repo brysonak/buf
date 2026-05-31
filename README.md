@@ -1,6 +1,6 @@
 # buf
 ![buf logo](buf.png)
-*B*ootable *U*SB *F*lasher is a tool made for flashing .iso/.img files onto USB drives, for booting into operating systems of course...
+**B**ootable **U**SB **F**lasher is a tool made for flashing .iso/.img files onto USB drives, for booting into operating systems of course...
  Is it bootable USB flasher or Bryson's USB flasher?
 
 buf is fully cross-platform and open source, under [GPL-v3](https://www.gnu.org/licenses/gpl-3.0.html).
