@@ -24,11 +24,37 @@ use log::LevelFilter;
 use std::path::PathBuf;
 
 fn home_dir() -> Option<PathBuf> {
+    // When running under sudo, SUDO_USER holds the original username.
+    // HOME at this point is root, so we need to get the real user's home
+    // from passwd instead
+    #[cfg(unix)]
+    if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+        if let Some(home) = passwd_home(&sudo_user) {
+            return Some(home);
+        }
+    }
+
     if let Ok(h) = std::env::var("HOME") {
         return Some(PathBuf::from(h));
     }
     if let Ok(h) = std::env::var("USERPROFILE") {
         return Some(PathBuf::from(h));
+    }
+    None
+}
+
+#[cfg(unix)]
+fn passwd_home(username: &str) -> Option<PathBuf> {
+    use std::fs;
+    let passwd = fs::read_to_string("/etc/passwd").ok()?;
+    for line in passwd.lines() {
+        let mut fields = line.splitn(7, ':');
+        let name = fields.next()?;
+        if name != username {
+            continue;
+        }
+        let home = fields.nth(4)?;
+        return Some(PathBuf::from(home));
     }
     None
 }

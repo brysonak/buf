@@ -24,7 +24,7 @@ use log::{debug, error, info, warn};
 #[derive(Parser, Debug)]
 #[command(
     name       = "buf",
-    version    = "0.1.1",
+    version    = "0.1.2",
     author     = "Bryson Kelly",
     about      = "A fast, safe bootable USB image flasher",
     long_about = None,
