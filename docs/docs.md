@@ -134,7 +134,20 @@ buf -s image.iso -t /dev/sdb -n
 ```
 
 By default, buf creates a timestamped log file in the user's home directory on
-each run. This flag suppresses that.
+each run. This flag suppresses that. Cannot be combined with `--log-path`.
+
+### `--log-path <PATH>`
+
+Write the log file to the given path instead of the default timestamped file in
+the home directory.
+
+```sh
+buf -s image.iso -t /dev/sdb --log-path /tmp/flash.log
+buf -s image.iso -t /dev/sdb --log-path C:\Users\user\Desktop\flash.log
+```
+
+The parent directory is created if it does not exist. Cannot be combined with
+`--no-logging`.
 
 ### `-v, --verbose`
 
@@ -163,6 +176,12 @@ directory on each run. The filename format is:
 ```
 buf-MM-DD-YY-HH:MM:SS.log   (Linux, macOS)
 buf-MM-DD-YY-HH-MM-SS.log   (Windows, colons are not valid in filenames)
+```
+
+Use `--log-path` to write the log to a specific file instead:
+
+```sh
+buf -s image.iso -t /dev/sdb --log-path /var/log/buf.log
 ```
 
 The log path is printed at startup:
@@ -222,6 +241,12 @@ Flash to a specific offset (e.g. past a 1 MiB reserved region):
 
 ```sh
 buf -s image.iso -t /dev/sdb --offset 1048576
+```
+
+Write the log to a specific file:
+
+```sh
+buf -s image.iso -t /dev/sdb --log-path /tmp/flash.log
 ```
 
 Windows, flashing to the second physical drive:

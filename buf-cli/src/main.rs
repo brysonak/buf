@@ -24,10 +24,12 @@ use log::{debug, error, info, warn};
 #[derive(Parser, Debug)]
 #[command(
     name       = "buf",
-    version    = "0.1.2",
+    version    = "0.1.3",
+    long_version = "0.1.3\n Copyright (C) 2026  Bryson Kelly\n    This program comes with ABSOLUTELY NO WARRANTY; for details, visit: https://github.com/brysonak/buf/blob/main/LICENSE\n    This is free software, and you are welcome to redistribute it\n    under certain conditions.",
     author     = "Bryson Kelly",
     about      = "A fast, safe bootable USB image flasher",
     long_about = None,
+    after_help = "For full documentation, please visit: https://github.com/brysonak/buf/blob/main/docs/docs.md",
     styles     = clap_styles(),
 )]
 struct Cli {
@@ -98,6 +100,13 @@ struct Cli {
     no_logging: bool,
 
     #[arg(
+        long = "log-path",
+        value_name = "PATH",
+        help = "Write the log file to this path (default path is the HOME/user directory)"
+    )]
+    log_path: Option<String>,
+
+    #[arg(
         short = 'v',
         long = "verbose",
         action = ArgAction::SetTrue,
@@ -123,13 +132,20 @@ fn run(cli: Cli) -> Result<()> {
         return Ok(());
     }
 
-    let log_path = libbuf::init_logger(!cli.no_logging, cli.verbose).unwrap_or_else(|e| {
-        eprintln!("Warning: could not initialise logger: {}", e);
-        None
-    });
+    if cli.no_logging && cli.log_path.is_some() {
+        bail!("--log-path and --no-logging cannot be run at the same time");
+    }
+
+    let custom_log_path = cli.log_path.as_deref().map(std::path::PathBuf::from);
+
+    let log_path = libbuf::init_logger(!cli.no_logging, cli.verbose, custom_log_path)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: could not initialise logger: {}", e);
+            None
+        });
 
     if let Some(ref path) = log_path {
-        println!("  Logging to: {}", path.display());
+        println!("Logging to: {}", path.display());
     }
 
     info!("buf started");
@@ -169,10 +185,13 @@ fn run(cli: Cli) -> Result<()> {
         if cli.offset != 0 {
             argv.extend(["--offset".to_string(), cli.offset.to_string()]);
         }
-        if cli.force     { argv.push("--force".to_string()); }
-        if cli.dry_run   { argv.push("--dry-run".to_string()); }
+        if let Some(ref p) = cli.log_path {
+            argv.extend(["--log-path".to_string(), p.clone()]);
+        }
+        if cli.force      { argv.push("--force".to_string()); }
+        if cli.dry_run    { argv.push("--dry-run".to_string()); }
         if cli.no_logging { argv.push("--no-logging".to_string()); }
-        if cli.verbose   { argv.push("--verbose".to_string()); }
+        if cli.verbose    { argv.push("--verbose".to_string()); }
         libbuf::elevate_or_warn(&argv)?;
     }
 

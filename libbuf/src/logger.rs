@@ -69,7 +69,7 @@ pub fn log_path() -> Option<PathBuf> {
     home_dir().map(|d| d.join(filename))
 }
 
-pub fn init(enabled: bool, verbose: bool) -> Result<Option<PathBuf>> {
+pub fn init(enabled: bool, verbose: bool, custom_path: Option<PathBuf>) -> Result<Option<PathBuf>> {
     let level = if verbose { LevelFilter::Debug } else { LevelFilter::Info };
 
     let formatter =
@@ -93,19 +93,24 @@ pub fn init(enabled: bool, verbose: bool) -> Result<Option<PathBuf>> {
         return Ok(None);
     }
 
-    let path = match log_path() {
+    // Use the caller-supplied path if given, otherwise derive one from the
+    // current timestamp in the user's home directory
+    let path = match custom_path {
         Some(p) => p,
-        None => {
-            // HOME/USERPROFILE unset; can happen when running as SYSTEM after UAC elevation 
-            eprintln!("Warning: could not determine home directory, logging to stderr only");
-            Dispatch::new()
-                .format(formatter)
-                .level(level)
-                .chain(std::io::stderr())
-                .apply()
-                .context("Failed to initialise stderr logger")?;
-            return Ok(None);
-        }
+        None => match log_path() {
+            Some(p) => p,
+            None => {
+                // HOME/USERPROFILE unset; can happen when running as SYSTEM after UAC elevation
+                eprintln!("Warning: could not determine home directory, logging to stderr only");
+                Dispatch::new()
+                    .format(formatter)
+                    .level(level)
+                    .chain(std::io::stderr())
+                    .apply()
+                    .context("Failed to initialise stderr logger")?;
+                return Ok(None);
+            }
+        },
     };
 
     if let Some(parent) = path.parent() {
