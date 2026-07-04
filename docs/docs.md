@@ -136,6 +136,32 @@ buf -s image.iso -t /dev/sdb -n
 By default, buf creates a timestamped log file in the user's home directory on
 each run. This flag suppresses that. Cannot be combined with `--log-path`.
 
+### `-m, --mode <MODE>`
+
+Choose how the image is written: `dd` or `copy`. Default is auto-detected from
+the image.
+
+```sh
+buf -s archlinux.iso -t /dev/sdb -m dd
+buf -s ubuntu.iso -t /dev/sdb --mode copy
+```
+
+`dd` writes the image byte-for-byte. `copy` writes a GPT
+with a FAT32 EFI System Partition and copies the ISO's files across instead,
+needed for images that aren't isohybrid and won't boot from a raw write.
+
+If left unset, buf sniffs the image (boot signature, ISO9660, UDF) and picks
+whichever mode the image actually supports. If the mode you pass doesn't match
+what the image supports, buf warns and asks for confirmation before writing an
+image that may not boot (skippable with `--force`).
+
+Files over FAT32's 4 GB for individual files (e.g. Windows `install.wim`) are handled with an
+NTFS + UEFI:NTFS fallback automatically (thanks to [Pete Batard](https://github.com/pbatard/rufus/tree/master/res/uefi)), Linux and Windows only. Not supported
+on macOS (for now)
+
+`copy` mode ignores `--block-size` and `--offset`, buf warns if either is set.
+
+
 ### `--log-path <PATH>`
 
 Write the log file to the given path instead of the default timestamped file in
