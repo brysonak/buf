@@ -1,6 +1,6 @@
 [Setup]
 AppName=buf
-AppVersion=0.2.0
+AppVersion=0.2.1
 AppPublisher=Bryson Kelly
 AppPublisherURL=https://github.com/brysonak/buf
 AppSupportURL=https://github.com/brysonak/buf/issues

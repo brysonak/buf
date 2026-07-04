@@ -333,9 +333,15 @@ fn copy_tree<T: ReadWriteSeek>(mroot: &Path, fs: &FileSystem<T>, pb: &ProgressBa
                 continue;
             }
 
+            // skip symlinked dirs
             if ft.is_dir() {
                 dir_for(fs, &comps)?; // creates the directory (and any parents)
                 stack.push(p);
+                continue;
+            }
+            if ft.is_symlink() && p.metadata().map(|m| m.is_dir()).unwrap_or(false) {
+                warn!("skipping symlinked directory {}", rel.display());
+                skipped += 1;
                 continue;
             }
 
@@ -1220,9 +1226,7 @@ impl Drop for MountGuard {
     }
 }
 
-// device prep, buffered open, partition re-read, per platform, copy mode opens unbuffered since fatfs does small unaligned IO
 
-// PrepGuard holds per-platform cleanup, on windows the locked volume handles that release on drop, empty elsewhere
 struct PrepGuard {
     #[cfg(windows)]
     locked: Vec<File>,
@@ -1290,7 +1294,7 @@ fn prepare_target(target: &Path) -> Result<PrepGuard> {
 #[cfg(windows)]
 fn prepare_target(target: &Path) -> Result<PrepGuard> {
     // locks and dismounts every volume on this drive, holding handles open so they persist through the writes, 
-    // windows rejects raw writes under a mounted volume otherwise, best-effort since a failed lock just warns
+    // windows rejects raw writes under a mounted volume otherwise, best effort since a failed lock just warns
     let drive_no = match physical_drive_number(target) {
         Some(n) => n,
         None => {
@@ -1567,6 +1571,28 @@ fn reread_partitions(_dev: &File, _target: &Path) {}
 mod tests {
     use super::*;
     use std::io::Read as _;
+
+    #[test]
+    #[cfg(unix)]
+    fn symlink_loop_is_detected_not_followed() {
+       // Regression check for self referential symlinks
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir()
+            .join(format!("buf-symlink-test-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        symlink(&base, base.join("loop")).unwrap(); // points at its own parent
+
+        let entry = std::fs::read_dir(&base)
+            .unwrap()
+            .find(|e| e.as_ref().unwrap().file_name() == "loop")
+            .unwrap()
+            .unwrap();
+        let ft = entry.file_type().unwrap();
+        assert!(ft.is_symlink() && !ft.is_dir(), "sanity: symlink's raw type isn't dir");
+        assert!(entry.path().metadata().unwrap().is_dir(), "target is a dir, must be skipped not recursed");
+
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn gpt_roundtrips_and_validates() {

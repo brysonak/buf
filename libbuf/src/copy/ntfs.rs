@@ -134,7 +134,7 @@ pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
         println!("note: EFI bootloader extracted from the ISO's El-Torito boot image");
     }
     if !scan.has_efi_boot && !extracted_boot {
-        warn!("No /EFI/BOOT/BOOT*.EFI found in image; result may not be UEFI-bootable");
+        warn!("No /EFI/BOOT/BOOT*.EFI found in image; result may not be UEFI-bootable (Note: Try flashing with --mode dd)");
         println!(
             "warning: no EFI bootloader (/EFI/BOOT/BOOT*.EFI) found in the image \
              or its El-Torito boot image; it may not boot under UEFI"
@@ -173,10 +173,16 @@ fn copy_tree_native(mroot: &Path, dst_root: &Path, pb: &ProgressBar) -> Result<u
             }
             let dst = dst_root.join(rel);
 
+            // symlink dirs are skipped
             if ft.is_dir() {
                 std::fs::create_dir_all(&dst)
                     .map_err(|e| anyhow::anyhow!("mkdir {}: {}", dst.display(), e))?;
                 stack.push(p);
+                continue;
+            }
+            if ft.is_symlink() && p.metadata().map(|m| m.is_dir()).unwrap_or(false) {
+                warn!("skipping symlinked directory {}", rel.display());
+                skipped += 1;
                 continue;
             }
 
