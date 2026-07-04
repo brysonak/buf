@@ -160,7 +160,7 @@ fn file_size(path: &Path) -> Result<u64> {
     Ok(path.metadata()?.len())
 }
 
-fn device_size(path: &Path) -> Result<u64> {
+pub fn device_size(path: &Path) -> Result<u64> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::FileTypeExt;
