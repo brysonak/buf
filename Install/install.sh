@@ -1,39 +1,81 @@
 #!/bin/sh
+set -eu
 REPO="https://github.com/brysonak/buf.git"
 BIN="buf"
-
-check_dep() {
-    if ! command -v "$1" > /dev/null 2>&1; then
-        echo "$1 is needed to run this, please install it before running this script again."
+PREFIX="${PREFIX:-/usr/local}"
+INSTALL_DIR="$PREFIX/bin"
+require() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf 'Error: required command "%s" not found.\n' "$1" >&2
         exit 1
     fi
 }
-
-OS=$(uname -s)
-
-case "$OS" in
-    Darwin)
-        INSTALL_DIR="/usr/local/bin"
-        check_dep git
-        check_dep cargo
-        check_dep clang
-        ;;
-    Linux)
-        INSTALL_DIR="/usr/bin"
-        check_dep git
-        check_dep cargo
-        check_dep cc
+case "$(uname -s)" in
+    Linux|Darwin)
         ;;
     *)
-        echo "Unsupported OS: $OS"
+        printf 'Error: unsupported operating system.\n' >&2
         exit 1
         ;;
 esac
-
+if [ -f /etc/NIXOS ]; then
+    printf 'NixOS detected, use the flake instead:\n' >&2
+    printf '  nix profile install github:brysonak/buf\n' >&2
+    exit 1
+fi
+require git
+require cargo
+require cc
 CLONE_DIR=$(mktemp -d)
-git clone "$REPO" "$CLONE_DIR"
+trap 'rm -rf "$CLONE_DIR"' EXIT
+printf 'Cloning %s...\n' "$REPO"
+git clone --depth 1 "$REPO" "$CLONE_DIR"
 cd "$CLONE_DIR"
-cargo build --release
-sudo cp "target/release/$BIN" "$INSTALL_DIR/$BIN"
-echo "buf installed to $INSTALL_DIR/$BIN, restart your shell to use it"
-rm -rf "$CLONE_DIR"
+cargo build --release --package buf
+if [ ! -f "target/release/$BIN" ]; then
+    printf 'Error: build failed, target/release/%s not found.\n' "$BIN" >&2
+    exit 1
+fi
+find_privilege_command() {
+    if [ "$(id -u)" -eq 0 ]; then
+        return 0
+    fi
+    for cmd in doas sudo pkexec; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            PRIVCMD="$cmd"
+            return 0
+        fi
+    done
+    return 1
+}
+run_privileged() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+        return
+    fi
+    if [ -n "${PRIVCMD:-}" ]; then
+        "$PRIVCMD" "$@"
+        return
+    fi
+    printf 'Error: Insufficient Permissions\n' >&2
+    printf 'Install sudo, doas or pkexec, or set PREFIX to a writable directory.\n' >&2
+    exit 1
+}
+mkdir -p "$INSTALL_DIR" 2>/dev/null || true
+if [ -w "$INSTALL_DIR" ]; then
+    install -m755 "target/release/$BIN" "$INSTALL_DIR/$BIN"
+else
+    find_privilege_command || {
+        printf 'Error: cannot write to %s.\n' "$INSTALL_DIR" >&2
+        exit 1
+    }
+    run_privileged install -m755 "target/release/$BIN" "$INSTALL_DIR/$BIN"
+fi
+printf '\nbuf installed successfully.\n'
+printf 'Executable: %s/%s\n' "$INSTALL_DIR" "$BIN"
+if command -v "$INSTALL_DIR/$BIN" >/dev/null 2>&1; then
+    "$INSTALL_DIR/$BIN" --version || true
+else
+    printf '\nNote: %s may not be in your PATH.\n' "$INSTALL_DIR"
+    printf "Restart your shell or run 'hash -r'.\n"
+fi

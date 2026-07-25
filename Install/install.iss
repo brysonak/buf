@@ -1,14 +1,21 @@
+#define BufAppVersion "0.2.1"
+
 [Setup]
+AppId={{5D0F69A8-6A08-440E-AFC6-E809B1B82C88}
 AppName=buf
-AppVersion=0.2.1
+AppVersion={#BufAppVersion}
 AppPublisher=Bryson Kelly
 AppPublisherURL=https://github.com/brysonak/buf
 AppSupportURL=https://github.com/brysonak/buf/issues
-
+AppUpdatesURL=https://github.com/brysonak/buf/releases
 DefaultDirName={autopf}\buf
 DefaultGroupName=buf
 DisableProgramGroupPage=yes
-
+LicenseFile=..\LICENSE
+VersionInfoVersion={#BufAppVersion}
+VersionInfoCompany=Bryson Kelly
+VersionInfoDescription=buf bootable USB flasher installer
+VersionInfoCopyright=Bryson Kelly
 OutputDir=..\install
 OutputBaseFilename=buf-setup
 
@@ -20,7 +27,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64compatible
 
 ChangesEnvironment=yes
-
+WizardStyle=modern
 SetupIconFile=..\buf-cli\logo.ico
 UninstallDisplayIcon={app}\logo.ico
 
@@ -30,7 +37,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 
 [Files]
-Source: "..\target\release\buf.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\target\release\buf.exe"; DestDir: "{app}"; DestName: "buf.exe"; Flags: ignoreversion
 Source: "..\buf-cli\logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 
@@ -96,27 +103,38 @@ begin
   end;
 end;
 
-procedure RemoveFromPath(Dir: string);
+procedure RemoveFromPath(const Dir: string);
 var
-  Path: string;
+  Path, NewPath, Entry: string;
+  PosSep: Integer;
 begin
   if not RegQueryStringValue(HKCU, EnvironmentKey, 'Path', Path) then
     Exit;
 
-  StringChangeEx(Path, ';' + Dir, '', True);
-  StringChangeEx(Path, Dir + ';', '', True);
-  StringChangeEx(Path, Dir, '', True);
+  NewPath := '';
+  while Path <> '' do
+  begin
+    PosSep := Pos(';', Path);
+    if PosSep = 0 then
+    begin
+      Entry := Path;
+      Path := '';
+    end
+    else
+    begin
+      Entry := Copy(Path, 1, PosSep - 1);
+      Delete(Path, 1, PosSep);
+    end;
 
-  while Pos(';;', Path) > 0 do
-    StringChangeEx(Path, ';;', ';', True);
+    if CompareText(Entry, Dir) <> 0 then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Entry;
+    end;
+  end;
 
-  if (Length(Path) > 0) and (Path[1] = ';') then
-    Delete(Path, 1, 1);
-
-  if (Length(Path) > 0) and (Path[Length(Path)] = ';') then
-    Delete(Path, Length(Path), 1);
-
-  RegWriteExpandStringValue(HKCU, EnvironmentKey, 'Path', Path);
+  RegWriteExpandStringValue(HKCU, EnvironmentKey, 'Path', NewPath);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

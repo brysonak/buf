@@ -8,26 +8,7 @@ buf is fully cross-platform and open source, under [GPL-v3](https://www.gnu.org/
 Logo made by [Mia](https://github.com/marshmallow-mia)
 
 # Installation 
-PREREQUISITES:
-- [git](https://git-scm.com/install)
-- [Rust](https://rust-lang.org/tools/install/)
-
-## Linux and macOS
-If you're on Arch, or another Arch Linux based distro, you can install off the AUR with [yay](https://github.com/jguer/yay):
-```bash
-yay -S buf-cli
-```
-If you prefer to use `paru` instead, run ``paru -S buf-cli``
-
-
-**If you're not on Arch**:
-```bash
-curl -fsSL https://raw.githubusercontent.com/brysonak/buf/refs/heads/main/Install/install.sh | sh
-```
-**NOTE**: This script will ask for priviledges.
-
-## Windows
-Run the `buf-setup.exe` installer from the [releases page](https://github.com/brysonak/buf/releases).
+Instructions have moved to [downloading.md](docs/downloading.md)
 
 
 # Building
