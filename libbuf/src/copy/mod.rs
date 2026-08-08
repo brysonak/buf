@@ -36,7 +36,8 @@ const ISO_SECTOR: u64 = 2048; // https://wiki.osdev.org/ISO_9660#Sector_size
 const COPY_CHUNK: usize = 4 * 1024 * 1024; // big enough that fatfs allocates long cluster runs per call, see stream_copy
 const CACHE_BYTES: usize = 32 * 1024 * 1024; // SectorCache's cap, covers a typical stick's whole FAT so it never spills mid write
 
-pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
+pub fn run(source: &str, target: &str, dry_run: bool, label: Option<&str>) -> Result<()> {
+    let label = resolve_label(label, Path::new(source));
     let target_path = Path::new(target);
     let sector = logical_sector_size(target_path);
     if !sector.is_power_of_two() || !(512..=4096).contains(&sector) {
@@ -80,7 +81,15 @@ pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
     );
 
     if scan.max_file > FAT32_MAX_FILE {
-        return oversized_file_fallback(source, target, dry_run, &scan);
+        return oversized_file_fallback(source, target, dry_run, &scan, &label);
+    }
+
+    // FIXME: only the FAT label gets truncated
+    if label.len() > 11 {
+        let cut = fat_label(&label);
+        let cut = String::from_utf8_lossy(&cut);
+        warn!("Label '{}' truncated to '{}' for FAT32", label, cut.trim_end());
+        println!("note: FAT32 labels are 11 characters, using '{}'", cut.trim_end());
     }
 
     if dry_run {
@@ -114,7 +123,7 @@ pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
     let mut io = SectorCache::new(&mut dev, sector);
 
     write_gpt(&mut io, total_sectors, align_lba, sector, &[PartSpec {
-        name: "BUF",
+        name: &label,
         type_guid: MS_BASIC_DATA,
         sectors: part_sectors,
     }])
@@ -130,7 +139,7 @@ pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
             FormatVolumeOptions::new()
                 .fat_type(FatType::Fat32)
                 .bytes_per_sector(sector as u16)
-                .volume_label(*b"BUF        "),
+                .volume_label(fat_label(&label)),
         )
         .map_err(|e| anyhow::anyhow!("FAT32 format failed: {}", e))?;
 
@@ -200,10 +209,16 @@ struct Scan {
 
 
 // FIXME: ntfs::run remounts the same ISO, doesn't harm anything but it is wasteful. thread mroot through if it ever matters
-fn oversized_file_fallback(source: &str, target: &str, dry_run: bool, scan: &Scan) -> Result<()> {
+fn oversized_file_fallback(
+    source: &str,
+    target: &str,
+    dry_run: bool,
+    scan: &Scan,
+    label: &str,
+) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        let _ = (source, target, dry_run, scan);
+        let _ = (source, target, dry_run, scan, label);
         // Due to Microshit, any disk image dealing with NTFS on mac will fail because A): I couldn't find a library that lets me write to NTFS from rust
         // and B): The driver that apple has built-in is read-only. Linux has mkfs.ntfs and windows has Format-Volume with powershell, sorry... I'll make something for the future to fix this. 
         bail!(
@@ -219,12 +234,12 @@ fn oversized_file_fallback(source: &str, target: &str, dry_run: bool, scan: &Sca
             "Largest file {} exceeds the FAT32 4 GiB-1 cap, falling back to NTFS + UEFI:NTFS",
             human_bytes(scan.max_file)
         );
-        return ntfs::run(source, target, dry_run);
+        return ntfs::run(source, target, dry_run, label);
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
-        let _ = (source, target, dry_run);
+        let _ = (source, target, dry_run, label);
         bail!(
             "Fatal: ISO contains a file larger than 4 GiB ({}). FAT32 cannot store it, and \
              the NTFS fallback is only implemented for Linux and Windows.",
@@ -391,8 +406,7 @@ fn dir_for<'a, T: ReadWriteSeek>(fs: &'a FileSystem<T>, comps: &[String]) -> Res
     Ok(cur)
 }
 
-// Resolve a symlink found on the mounted ISO to a real file path within the
-// mount
+// Resolve a symlink found on the mounted ISO to a real file path within the mount
 fn resolve_symlink(mroot: &Path, link: &Path) -> Option<PathBuf> {
     let target = std::fs::read_link(link).ok()?;
     let joined = if target.is_absolute() {
@@ -585,10 +599,63 @@ const MS_BASIC_DATA: [u8; 16] = guid_le([
 ]);
 
 
-struct PartSpec {
-    name: &'static str,
+struct PartSpec<'a> {
+    name: &'a str,
     type_guid: [u8; 16],
     sectors: u64,
+}
+
+fn resolve_label(explicit: Option<&str>, source: &Path) -> String {
+    let picked = explicit
+        .map(|s| s.to_string())
+        .or_else(|| iso_volume_label(source))
+        .unwrap_or_default();
+    match sanitize_label(&picked) {
+        s if s.is_empty() => "BUF".to_string(),
+        s => s,
+    }
+}
+
+// The label reaches mkfs.ntfs argv and a single-quoted powershell string, so
+// anything outside this set is replaced
+fn sanitize_label(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+// FAT32's BPB label is exactly 11 bytes
+fn fat_label(label: &str) -> [u8; 11] {
+    let mut out = [b' '; 11];
+    for (slot, b) in out.iter_mut().zip(label.bytes()) {
+        *slot = b.to_ascii_uppercase();
+    }
+    out
+}
+
+fn iso_volume_label(path: &Path) -> Option<String> {
+    let mut f = File::open(path).ok()?;
+    let mut pvd = [0u8; 0x48];
+    f.seek(SeekFrom::Start(16 * ISO_SECTOR)).ok()?;
+    f.read_exact(&mut pvd).ok()?;
+    if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
+        return None;
+    }
+    let s = pvd[0x28..0x48]
+        .iter()
+        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '_' })
+        .collect::<String>()
+        .trim()
+        .to_string();
+    (!s.is_empty()).then_some(s)
 }
 
 // writes protective MBR plus primary/backup GPT, sector-size aware for 4Kn, returns (start_lba, end_lba) per partition
@@ -597,7 +664,7 @@ fn write_gpt<D: Write + Seek>(
     total_sectors: u64,
     first_lba: u64,
     sector: u64,
-    parts: &[PartSpec],
+    parts: &[PartSpec<'_>],
 ) -> Result<Vec<(u64, u64)>> {
     const ENTRY_SIZE: u32 = 128;
     const ENTRY_COUNT: u32 = 128;
@@ -1504,7 +1571,9 @@ fn open_target_buffered(path: &Path) -> Result<File> {
 #[cfg(target_os = "linux")]
 fn reread_partitions(dev: &File, _target: &Path) {
     use std::os::unix::io::AsRawFd;
-    const BLKRRPART: u64 = 0x125D;
+    // Do not trust reddit as a source for anything. Kept getting BLKRRPART errors because this constant was wong
+    // FUCK REDDIT
+    const BLKRRPART: u64 = 0x125F;
     const EBUSY: i32 = 16;
     // EBUSY usually means udev or a lingering opener still holds the disk for
     // a moment after our writes. it settles quickly, so retry briefly
@@ -1665,6 +1734,39 @@ mod tests {
 
         drop(f);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn label_resolution_and_fat_padding() {
+        assert_eq!(&fat_label("arch")[..], b"ARCH       ");
+        assert_eq!(&fat_label("ARCH_202608")[..], b"ARCH_202608");
+        assert_eq!(&fat_label("way too long a label")[..], b"WAY TOO LON");
+
+        assert_eq!(sanitize_label("Ubuntu 24.04'; rm -rf"), "Ubuntu 24_04__ rm -rf");
+        assert_eq!(sanitize_label("  ***  "), "___");
+
+        // a file with no ISO9660 PVD falls through to the default
+        let empty = std::env::temp_dir().join(format!("buf-label-test-{}.img", std::process::id()));
+        File::create(&empty).unwrap().set_len(1 << 16).unwrap();
+        assert_eq!(iso_volume_label(&empty), None);
+        assert_eq!(resolve_label(None, &empty), "BUF");
+        assert_eq!(resolve_label(Some("MYSTICK"), &empty), "MYSTICK");
+
+        // now stamp a minimal PVD in and check we read the identifier back
+        {
+            let mut f = std::fs::OpenOptions::new().write(true).open(&empty).unwrap();
+            f.seek(SeekFrom::Start(16 * ISO_SECTOR)).unwrap();
+            let mut pvd = [b' '; 0x48];
+            pvd[0] = 1;
+            pvd[1..6].copy_from_slice(b"CD001");
+            pvd[0x28..0x28 + 11].copy_from_slice(b"ARCH_202608");
+            f.write_all(&pvd).unwrap();
+        }
+        assert_eq!(iso_volume_label(&empty).as_deref(), Some("ARCH_202608"));
+        assert_eq!(resolve_label(None, &empty), "ARCH_202608");
+        assert_eq!(resolve_label(Some("MYSTICK"), &empty), "MYSTICK");
+
+        let _ = std::fs::remove_file(&empty);
     }
 
     #[test]

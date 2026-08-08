@@ -25,8 +25,8 @@ use log::{debug, error, info, warn};
 #[derive(Parser, Debug)]
 #[command(
     name       = "buf",
-    version    = "0.2.1",
-    long_version = "0.2.1\n Copyright (C) 2026  Bryson Kelly\n    This program comes with ABSOLUTELY NO WARRANTY; for details, visit: https://github.com/brysonak/buf/blob/main/LICENSE\n    This is free software, and you are welcome to redistribute it\n    under certain conditions.",
+    version    = "0.2.2",
+    long_version = "0.2.2\n Copyright (C) 2026  Bryson Kelly\n    This program comes with ABSOLUTELY NO WARRANTY; for details, visit: https://github.com/brysonak/buf/blob/main/LICENSE\n    This is free software, and you are welcome to redistribute it\n    under certain conditions.",
     author     = "Bryson Kelly",
     about      = "A fast, safe bootable USB image flasher",
     long_about = None,
@@ -69,6 +69,13 @@ struct Cli {
         help = "Write mode: 'dd' (raw image) or 'copy' (extract ISO files). Default: auto-detect"
     )]
     mode: Vec<String>,
+
+    #[arg(
+        long = "label",
+        value_name = "NAME",
+        help = "Volume label for the flashed drive, copy mode only (default: the ISO's own label)"
+    )]
+    label: Option<String>,
 
     #[arg(
         short = 'b',
@@ -181,6 +188,10 @@ fn run(cli: Cli) -> Result<()> {
     }
     let requested: Option<Mode> = requested.first().copied();
 
+    if let Some(ref l) = cli.label {
+        validate_label(l)?;
+    }
+
     // Resolve to absolute before elevation. UAC relaunch via cmd.exe resets the
     // working directory to System32, so a relative path would not resolve correctly.
     let source = {
@@ -213,6 +224,9 @@ fn run(cli: Cli) -> Result<()> {
         if let Some(ref p) = cli.log_path {
             argv.extend(["--log-path".to_string(), p.clone()]);
         }
+        if let Some(ref l) = cli.label {
+            argv.extend(["--label".to_string(), l.clone()]);
+        }
         if cli.force      { argv.push("--force".to_string()); }
         if cli.dry_run    { argv.push("--dry-run".to_string()); }
         if cli.no_logging { argv.push("--no-logging".to_string()); }
@@ -243,6 +257,10 @@ fn run(cli: Cli) -> Result<()> {
 }
 
 fn write_dd(cli: &Cli, source: &str, target: &str) -> Result<()> {
+    if cli.label.is_some() {
+        println!("Warning: Flag(s) --label is not usable in dd mode, ignoring...");
+    }
+
     let block_size = parse_size(&cli.block_size)
         .map_err(|e| anyhow::anyhow!("Invalid --block-size '{}': {}", cli.block_size, e))?;
 
@@ -312,7 +330,7 @@ fn write_copy(cli: &Cli, source: &str, target: &str, caps: libbuf::ImageCaps) ->
     }
 
     if cli.dry_run {
-        return libbuf::copy::run(source, target, true);
+        return libbuf::copy::run(source, target, true, cli.label.as_deref());
     }
 
     if !cli.force {
@@ -326,7 +344,7 @@ fn write_copy(cli: &Cli, source: &str, target: &str, caps: libbuf::ImageCaps) ->
     println!("\n  Copying {} -> {} (ISO mode)...\n", source, target);
     info!("Starting copy: {} -> {}", source, target);
 
-    libbuf::copy::run(source, target, false)
+    libbuf::copy::run(source, target, false, cli.label.as_deref())
 }
 
 fn parse_modes(raw: &[String]) -> Result<Vec<Mode>> {
@@ -338,6 +356,25 @@ fn parse_modes(raw: &[String]) -> Result<Vec<Mode>> {
         }
     }
     Ok(out)
+}
+
+fn validate_label(label: &str) -> Result<()> {
+    if label.trim().is_empty() {
+        bail!("Fatal: --label cannot be empty");
+    }
+    if label.chars().count() > 32 {
+        bail!("Fatal: --label is limited to 32 characters (NTFS max, FAT32 uses the first 11)");
+    }
+    if let Some(bad) = label
+        .chars()
+        .find(|c| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '-' || *c == ' '))
+    {
+        bail!(
+            "Fatal: --label contains '{}'; only ASCII letters, digits, spaces, '_' and '-' are allowed",
+            bad
+        );
+    }
+    Ok(())
 }
 
 fn confirm_risky_mode() -> Result<()> {

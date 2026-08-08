@@ -145,13 +145,14 @@ fn is_usb_device(dev_path: &Path) -> bool {
 pub fn list_drives() -> Result<Vec<UsbDevice>> {
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
     use windows::Win32::Devices::DeviceAndDriverInstallation::{
         SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInterfaces, SetupDiGetClassDevsW,
         SetupDiGetDeviceInterfaceDetailW, DIGCF_DEVICEINTERFACE, DIGCF_PRESENT,
         SPDRP_FRIENDLYNAME, SPDRP_PHYSICAL_DEVICE_OBJECT_NAME, SP_DEVICE_INTERFACE_DATA,
         SP_DEVICE_INTERFACE_DETAIL_DATA_W, SP_DEVINFO_DATA,
     };
-    use windows::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
+    use windows::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows::Win32::Storage::FileSystem::{
         CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
@@ -264,7 +265,7 @@ pub fn list_drives() -> Result<Vec<UsbDevice>> {
         let handle = unsafe {
             CreateFileW(
                 windows::core::PCWSTR(wide_path.as_ptr()),
-                GENERIC_READ.0,
+                0,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 None,
                 OPEN_EXISTING,
@@ -273,13 +274,21 @@ pub fn list_drives() -> Result<Vec<UsbDevice>> {
             )
         };
 
-        let handle = match handle {
-            Ok(h) if h != INVALID_HANDLE_VALUE => h,
-            _ => {
+        // Wrapped in a File purely so Drop closes it on every exit path below
+        let owned = match handle {
+            Ok(h) if h != INVALID_HANDLE_VALUE => unsafe {
+                std::fs::File::from_raw_handle(h.0 as *mut _)
+            },
+            Ok(_) => {
                 debug!("Could not open {}, skipping", device_path);
                 continue;
             }
+            Err(e) => {
+                debug!("Could not open {} ({}), skipping", device_path, e);
+                continue;
+            }
         };
+        let handle = windows::Win32::Foundation::HANDLE(owned.as_raw_handle() as isize);
 
         let mut dev_num = STORAGE_DEVICE_NUMBER::default();
         let mut bytes_returned = 0u32;
@@ -615,6 +624,8 @@ pub fn human_bytes(bytes: u64) -> String {
 pub fn print_device_table(devices: &[UsbDevice]) {
     if devices.is_empty() {
         println!("No storage devices found.");
+        #[cfg(windows)]
+        println!("If a drive is plugged in, re-run with --verbose to see why each device was skipped.");
         return;
     }
 

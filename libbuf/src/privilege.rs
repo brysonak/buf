@@ -62,39 +62,61 @@ pub fn elevate_or_warn(args: &[String]) -> Result<()> {
 fn unix_elevate(args: &[String]) -> Result<()> {
     let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("buf"));
 
-    let sudo = if can_exec("sudo") {
-        "sudo"
-    } else if can_exec("pkexec") {
-        "pkexec"
-    } else {
-        eprintln!("  Neither sudo nor pkexec found. Please re-run as root.");
-        std::process::exit(1);
+    const CANDIDATES: [&str; 4] = ["doas", "sudo", "run0", "pkexec"];
+
+    let escalator = match std::env::var("BUF_SUDO") {
+        Ok(v) if !v.trim().is_empty() => {
+            let v = v.trim().to_string();
+            if !can_exec(&v) {
+                eprintln!("BUF_SUDO is set to '{}' but that is not an executable.", v);
+                std::process::exit(1);
+            }
+            v
+        }
+        _ => match CANDIDATES.iter().find(|c| can_exec(c)) {
+            Some(c) => c.to_string(),
+            None => {
+                eprintln!(
+                    "No escalation tool found (tried {}). Re-run buf as root, or set \
+                     BUF_SUDO to the one you use.",
+                    CANDIDATES.join(", ")
+                );
+                std::process::exit(1);
+            }
+        },
     };
 
-    eprintln!("  Attempting to re-launch via {}...\n", sudo);
-    info!("Re-launching via {} {:?} {:?}", sudo, exe, args);
+    eprintln!("  Attempting to re-launch via {}...\n", escalator);
+    info!("Re-launching via {} {:?} {:?}", escalator, exe, args);
 
-    let status = std::process::Command::new(sudo)
+    let status = std::process::Command::new(&escalator)
         .arg(&exe)
         .args(args)
         .status()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn {}: {}", sudo, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to spawn {}: {}", escalator, e))?;
 
     std::process::exit(status.code().unwrap_or(1));
 }
 
 #[cfg(unix)]
 fn can_exec(cmd: &str) -> bool {
-    // Check PATH entries directly rather than shelling out to `which`
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in path_var.split(':') {
-            let candidate = std::path::Path::new(dir).join(cmd);
-            if candidate.is_file() {
-                return true;
-            }
-        }
+    use std::os::unix::fs::PermissionsExt;
+
+    let executable = |p: &std::path::Path| {
+        p.metadata()
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    };
+
+    // A name containing a separator is a path already, don't search PATH for it
+    if cmd.contains('/') {
+        return executable(std::path::Path::new(cmd));
     }
-    false
+
+    // Check PATH entries directly rather than shelling out to `which`
+    std::env::var("PATH")
+        .map(|p| p.split(':').any(|d| executable(&std::path::Path::new(d).join(cmd))))
+        .unwrap_or(false)
 }
 
 #[cfg(windows)]

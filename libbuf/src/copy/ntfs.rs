@@ -41,7 +41,7 @@ const GPT_TAIL: u64 = 33;
 // reason to allow a smaller NTFS data partition than we'd allow a FAT32 one
 const MIN_DATA_SECTORS: u64 = 64 * 1024 * 1024 / SECTOR;
 
-pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
+pub fn run(source: &str, target: &str, dry_run: bool, label: &str) -> Result<()> {
     let target_path = Path::new(target);
     let dev_bytes = crate::device_size(target_path)
         .with_context(|| format!("Could not determine size of target {}", target))?;
@@ -102,7 +102,7 @@ pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
     let mut io = super::SectorCache::new(&mut dev, SECTOR);
 
     let placements = write_gpt(&mut io, total_sectors, ALIGN_LBA, SECTOR, &[
-        PartSpec { name: "BUF", type_guid: MS_BASIC_DATA, sectors: ntfs_sectors },
+        PartSpec { name: label, type_guid: MS_BASIC_DATA, sectors: ntfs_sectors },
         PartSpec { name: "UEFI_NTFS", type_guid: ESP_TYPE, sectors: loader_sectors },
     ])
     .context("Failed to write GPT")?;
@@ -121,7 +121,7 @@ pub fn run(source: &str, target: &str, dry_run: bool) -> Result<()> {
 
     let pb = build_bar(scan.total_bytes);
     let (skipped, extracted_boot) =
-        format_and_copy(target_path, &mroot, Path::new(source), !scan.has_efi_boot, &pb)?;
+        format_and_copy(target_path, &mroot, Path::new(source), !scan.has_efi_boot, &pb, label)?;
     pb.finish_with_message("Done");
 
     // Unmount the source ISO explicitly so any error is logged now
@@ -220,12 +220,13 @@ fn format_and_copy(
     source: &Path,
     need_eltorito: bool,
     pb: &ProgressBar,
+    label: &str,
 ) -> Result<(u64, bool)> {
     let part_node = partition_node(target, 1);
     wait_for_node(&part_node)?;
 
     let st = Command::new("mkfs.ntfs")
-        .args(["-f", "-F", "-L", "BUF"])
+        .args(["-f", "-F", "-L", label])
         .arg(&part_node)
         .status()
         .context(
@@ -332,22 +333,25 @@ fn format_and_copy(
     source: &Path,
     need_eltorito: bool,
     pb: &ProgressBar,
+    label: &str,
 ) -> Result<(u64, bool)> {
     let drive_no = super::physical_drive_number(target)
         .ok_or_else(|| anyhow::anyhow!("Could not parse PhysicalDrive number from {}", target.display()))?;
 
+    // I hate powershell
     let ps = format!(
         "$ErrorActionPreference='Stop'; \
          Update-HostStorageCache; \
          Get-Partition -DiskNumber {n} -PartitionNumber 1 | \
-         Format-Volume -FileSystem NTFS -NewFileSystemLabel BUF -Confirm:$false | Out-Null; \
+         Format-Volume -FileSystem NTFS -NewFileSystemLabel '{label}' -Confirm:$false | Out-Null; \
          $p = Get-Partition -DiskNumber {n} -PartitionNumber 1; \
          if (-not $p.DriveLetter) {{ \
              $p | Add-PartitionAccessPath -AssignDriveLetter | Out-Null; \
              $p = Get-Partition -DiskNumber {n} -PartitionNumber 1; \
          }}; \
          Write-Output $p.DriveLetter",
-        n = drive_no
+        n = drive_no,
+        label = label
     );
     let out = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
