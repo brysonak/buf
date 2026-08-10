@@ -59,6 +59,19 @@ Output example:
 
 Devices are sorted with removable drives first.
 
+### `--label <NAME>`
+
+Volume label for the flashed drive. Copy mode only.
+
+```sh
+buf -s archlinux.iso -t /dev/sdb --label archlinux-usb
+```
+If left unset, buf reuses the source ISO's own volume identifier.
+
+Accepted characters are ASCII letters, digits, spaces, _ and -, up to 32 characters. FAT32 stores only the first 11, so longer labels are truncated and buf prints a note.
+
+The label is also used as the GPT partition name.
+
 ### `-b, --block-size <SIZE>`
 
 Size of each write block. Default is `32MiB`.
