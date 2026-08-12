@@ -37,7 +37,7 @@ const COPY_CHUNK: usize = 4 * 1024 * 1024; // big enough that fatfs allocates lo
 const CACHE_BYTES: usize = 32 * 1024 * 1024; // SectorCache's cap, covers a typical stick's whole FAT so it never spills mid write
 
 pub fn run(source: &str, target: &str, dry_run: bool, label: Option<&str>) -> Result<()> {
-    let label = resolve_label(label, Path::new(source));
+    let (mut label, explicit_label) = resolve_label(label, Path::new(source));
     let target_path = Path::new(target);
     let sector = logical_sector_size(target_path);
     if !sector.is_power_of_two() || !(512..=4096).contains(&sector) {
@@ -84,12 +84,13 @@ pub fn run(source: &str, target: &str, dry_run: bool, label: Option<&str>) -> Re
         return oversized_file_fallback(source, target, dry_run, &scan, &label);
     }
 
-    // FIXME: only the FAT label gets truncated
     if label.len() > 11 {
-        let cut = fat_label(&label);
-        let cut = String::from_utf8_lossy(&cut);
-        warn!("Label '{}' truncated to '{}' for FAT32", label, cut.trim_end());
-        println!("note: FAT32 labels are 11 characters, using '{}'", cut.trim_end());
+        let short = String::from_utf8_lossy(&fat_label(&label)).trim_end().to_string();
+        if explicit_label {
+            warn!("Label '{}' truncated to '{}' for FAT32", label, short);
+            println!("note: FAT32 labels are 11 characters, using '{}'", short);
+        }
+        label = short;
     }
 
     if dry_run {
@@ -605,15 +606,17 @@ struct PartSpec<'a> {
     sectors: u64,
 }
 
-fn resolve_label(explicit: Option<&str>, source: &Path) -> String {
+fn resolve_label(explicit: Option<&str>, source: &Path) -> (String, bool) {
+    let was_explicit = explicit.is_some();
     let picked = explicit
         .map(|s| s.to_string())
         .or_else(|| iso_volume_label(source))
         .unwrap_or_default();
-    match sanitize_label(&picked) {
+    let label = match sanitize_label(&picked) {
         s if s.is_empty() => "BUF".to_string(),
         s => s,
-    }
+    };
+    (label, was_explicit)
 }
 
 // The label reaches mkfs.ntfs argv and a single-quoted powershell string, so
@@ -1749,8 +1752,8 @@ mod tests {
         let empty = std::env::temp_dir().join(format!("buf-label-test-{}.img", std::process::id()));
         File::create(&empty).unwrap().set_len(1 << 16).unwrap();
         assert_eq!(iso_volume_label(&empty), None);
-        assert_eq!(resolve_label(None, &empty), "BUF");
-        assert_eq!(resolve_label(Some("MYSTICK"), &empty), "MYSTICK");
+        assert_eq!(resolve_label(None, &empty), ("BUF".to_string(), false));
+        assert_eq!(resolve_label(Some("MYSTICK"), &empty), ("MYSTICK".to_string(), true));
 
         // now stamp a minimal PVD in and check we read the identifier back
         {
@@ -1763,8 +1766,8 @@ mod tests {
             f.write_all(&pvd).unwrap();
         }
         assert_eq!(iso_volume_label(&empty).as_deref(), Some("ARCH_202608"));
-        assert_eq!(resolve_label(None, &empty), "ARCH_202608");
-        assert_eq!(resolve_label(Some("MYSTICK"), &empty), "MYSTICK");
+        assert_eq!(resolve_label(None, &empty), ("ARCH_202608".to_string(), false));
+        assert_eq!(resolve_label(Some("MYSTICK"), &empty), ("MYSTICK".to_string(), true));
 
         let _ = std::fs::remove_file(&empty);
     }
