@@ -27,7 +27,7 @@ use std::process::Command;
 
 use super::{
     build_bar, gpt_write_at, open_target_buffered, prepare_target, reread_partitions,
-    resolve_symlink, scan_tree, write_gpt, MountGuard, PartSpec, ESP_TYPE, MS_BASIC_DATA,
+    resolve_symlink, write_gpt, PartSpec, Scan, ESP_TYPE, MS_BASIC_DATA,
 };
 use crate::list::human_bytes;
 
@@ -41,7 +41,7 @@ const GPT_TAIL: u64 = 33;
 // reason to allow a smaller NTFS data partition than we'd allow a FAT32 one
 const MIN_DATA_SECTORS: u64 = 64 * 1024 * 1024 / SECTOR;
 
-pub fn run(source: &str, target: &str, dry_run: bool, label: &str) -> Result<()> {
+pub fn run(source: &str, target: &str, dry_run: bool, label: &str, mroot: &Path, scan: &Scan,) -> Result<()> {
     let target_path = Path::new(target);
     let dev_bytes = crate::device_size(target_path)
         .with_context(|| format!("Could not determine size of target {}", target))?;
@@ -56,12 +56,6 @@ pub fn run(source: &str, target: &str, dry_run: bool, label: &str) -> Result<()>
     }
     let ntfs_sectors = total_sectors - ALIGN_LBA - GPT_TAIL - loader_sectors;
 
-    let guard = MountGuard::mount(Path::new(source))
-        .with_context(|| format!("Failed to mount source ISO {}", source))?;
-    let mroot = guard.mount_point().to_path_buf();
-    info!("Mounted {} at {}", source, mroot.display());
-
-    let scan = scan_tree(&mroot)?;
     info!(
         "ntfs-copy: {} across {} files, largest {}, efi_boot={}",
         human_bytes(scan.total_bytes),
@@ -121,11 +115,8 @@ pub fn run(source: &str, target: &str, dry_run: bool, label: &str) -> Result<()>
 
     let pb = build_bar(scan.total_bytes);
     let (skipped, extracted_boot) =
-        format_and_copy(target_path, &mroot, Path::new(source), !scan.has_efi_boot, &pb, label)?;
+        format_and_copy(target_path, mroot, Path::new(source), !scan.has_efi_boot, &pb, label)?;
     pb.finish_with_message("Done");
-
-    // Unmount the source ISO explicitly so any error is logged now
-    drop(guard);
 
     if skipped > 0 {
         println!("note: {} file(s) could not be read from the ISO and were skipped", skipped);

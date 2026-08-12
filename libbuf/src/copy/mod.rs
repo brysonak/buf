@@ -81,7 +81,7 @@ pub fn run(source: &str, target: &str, dry_run: bool, label: Option<&str>) -> Re
     );
 
     if scan.max_file > FAT32_MAX_FILE {
-        return oversized_file_fallback(source, target, dry_run, &scan, &label);
+        return oversized_file_fallback(source, target, dry_run, &mroot, &scan, &label);
     }
 
     if label.len() > 11 {
@@ -209,17 +209,17 @@ struct Scan {
 }
 
 
-// FIXME: ntfs::run remounts the same ISO, doesn't harm anything but it is wasteful. thread mroot through if it ever matters
 fn oversized_file_fallback(
     source: &str,
     target: &str,
     dry_run: bool,
+    mroot: &Path,
     scan: &Scan,
     label: &str,
 ) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        let _ = (source, target, dry_run, scan, label);
+        let _ = (source, target, dry_run, mroot, scan, label);
         // Due to Microshit, any disk image dealing with NTFS on mac will fail because A): I couldn't find a library that lets me write to NTFS from rust
         // and B): The driver that apple has built-in is read-only. Linux has mkfs.ntfs and windows has Format-Volume with powershell, sorry... I'll make something for the future to fix this. 
         bail!(
@@ -235,12 +235,12 @@ fn oversized_file_fallback(
             "Largest file {} exceeds the FAT32 4 GiB-1 cap, falling back to NTFS + UEFI:NTFS",
             human_bytes(scan.max_file)
         );
-        return ntfs::run(source, target, dry_run, label);
+        return ntfs::run(source, target, dry_run, label, mroot, scan);
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
-        let _ = (source, target, dry_run, label);
+        let _ = (source, target, dry_run, mroot, label);
         bail!(
             "Fatal: ISO contains a file larger than 4 GiB ({}). FAT32 cannot store it, and \
              the NTFS fallback is only implemented for Linux and Windows.",
