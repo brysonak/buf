@@ -1,7 +1,7 @@
 # Maintainer: Bryson Kelly <bryson@azin-lang (dot) org>
 pkgname=buf-cli
 _binname=buf
-pkgver=0.2.2
+pkgver=0.2.3
 pkgrel=1
 _srcdir="buf-$pkgver"
 pkgdesc="A fast, safe bootable USB image flasher"
