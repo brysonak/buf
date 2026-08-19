@@ -8,7 +8,7 @@ PREREQUISITES (non-Windows):
 
 **THE PACKAGE ON THE AUR IS IN THE MIDDLE OF BEING RENAMED. Please standby**
 
-**If you're on another distribution or macOS**:
+**Linux and macOS**:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/brysonak/bufusb/refs/heads/main/Install/install.sh | sh
 ```
