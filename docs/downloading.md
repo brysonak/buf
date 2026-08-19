@@ -23,4 +23,4 @@ nix profile install github:brysonak/bufusb
 
 ## Windows
 
-Run the `buf-setup.exe` installer from the [releases page](https://github.com/brysonak/bufusb/releases).
+Run the `bufusb-setup.exe` installer from the [releases page](https://github.com/brysonak/bufusb/releases).
